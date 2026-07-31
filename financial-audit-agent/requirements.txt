@@ -1,0 +1,10 @@
+google-antigravity
+google-cloud-bigquery
+google-cloud-storage
+reportlab
+PyPDF2
+# Optional: observability
+# google-cloud-logging
+# opentelemetry-api
+# opentelemetry-sdk
+# opentelemetry-exporter-gcp-trace
