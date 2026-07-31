@@ -3,6 +3,7 @@ import json
 
 PROJECT_ID = "YOUR_PROJECT_ID"  # Replace with your GCP project ID
 DATASET = "financial_audit"
+BUCKET_NAME = f"{PROJECT_ID}-audit-invoices"  # GCS bucket for invoice PDFs
 
 _client = bigquery.Client(project=PROJECT_ID)
 
@@ -39,11 +40,11 @@ def query_vendor_transactions(quarter: str = "Q3") -> str:
     return json.dumps({"total_transactions": len(results), "transactions": results}, indent=2)
 
 
-def list_invoices_in_gcs(bucket_name: str, prefix: str = "Q3/") -> str:
+def list_invoices_in_gcs(bucket_name: str = BUCKET_NAME, prefix: str = "Q3/") -> str:
     """List all invoice PDF files in a Google Cloud Storage bucket.
 
     Args:
-        bucket_name: The GCS bucket name (e.g. "my-project-audit-invoices").
+        bucket_name: The GCS bucket name. Defaults to {PROJECT_ID}-audit-invoices.
         prefix: Path prefix to filter by (e.g. "Q3/" for Q3 invoices).
 
     Returns:
@@ -63,14 +64,14 @@ def list_invoices_in_gcs(bucket_name: str, prefix: str = "Q3/") -> str:
     return json.dumps({"total_invoices": len(invoices), "invoices": invoices}, indent=2)
 
 
-def read_invoice_from_gcs(bucket_name: str, invoice_path: str) -> str:
+def read_invoice_from_gcs(bucket_name: str = BUCKET_NAME, invoice_path: str = "") -> str:
     """Read an invoice PDF from Google Cloud Storage and extract its structured data.
 
     Downloads the PDF, parses its text content, and returns structured fields
     including vendor ID, invoice number, amounts, tax rate, and currency.
 
     Args:
-        bucket_name: The GCS bucket name (e.g. "my-project-audit-invoices").
+        bucket_name: The GCS bucket name. Defaults to {PROJECT_ID}-audit-invoices.
         invoice_path: Path to the invoice within the bucket (e.g. "Q3/INV-8492-Q3-001.pdf").
 
     Returns:
