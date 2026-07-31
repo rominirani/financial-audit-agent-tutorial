@@ -1,60 +1,60 @@
-from google.antigravity import LocalAgentConfig, CapabilitiesConfig
-from tools.bigquery_tools import AUDIT_TOOLS, BUCKET_NAME
+from google.antigravity import LocalAgentConfig
+from tools.delegation_tools import DELEGATION_TOOLS
 
 
 def get_orchestrator_config(policies, workspace, project_id=None, quarter="Q3"):
     """Build the Orchestrator agent configuration.
 
-    Registers the BigQuery/GCS tools so the agent can call them directly,
-    enables subagent spawning, and configures Vertex AI credentials.
+    The orchestrator does NOT have direct access to BigQuery or GCS tools.
+    Instead, it delegates to specialist subagents via delegation tools:
+      - delegate_to_data_researcher: queries BigQuery + lists GCS invoices
+      - delegate_to_invoice_analyzer: reads and parses individual PDFs
+      - delegate_to_reconciler: reconciles data + writes audit results
     """
     return LocalAgentConfig(
         system_instructions=f"""
-        You are the Lead Financial Auditor. You MUST complete the entire reconciliation
-        workflow in a single session. Do NOT stop partway through.
+        You are the Lead Financial Auditor orchestrating a team of specialist subagents.
+        You MUST complete the entire reconciliation workflow in a single session.
 
-        GCS BUCKET: {BUCKET_NAME}
         QUARTER: {quarter}
 
-        WORKFLOW — execute ALL steps before producing your final report:
+        You do NOT access BigQuery or GCS directly. Instead, you delegate to your
+        specialist subagents using the tools below:
 
-        STEP 1: Call query_vendor_transactions(quarter="{quarter}") to get all PENDING
-                transactions from BigQuery.
+        STEP 1 — DATA RESEARCH
+        Call delegate_to_data_researcher(quarter="{quarter}").
+        This spawns the Data Researcher subagent, who queries BigQuery for PENDING
+        transactions and lists invoice PDFs in GCS. The subagent returns JSON with
+        'transactions' and 'invoices' sections.
 
-        STEP 2: Call list_invoices_in_gcs() to list all invoice PDFs in the GCS bucket.
+        STEP 2 — INVOICE ANALYSIS
+        For EACH invoice path returned in Step 1, call
+        delegate_to_invoice_analyzer(invoice_path="Q3/INV-xxxx.pdf").
+        This spawns the Invoice Analyzer subagent for each PDF. Each call returns
+        extracted fields: vendor_id, invoice_num, amounts, tax_rate, currency.
 
-        STEP 3: For EACH invoice PDF returned in Step 2, call read_invoice_from_gcs()
-                with the invoice_path (e.g. "Q3/INV-8492-Q3-001.pdf").
-                Extract: vendor_id, invoice_num, base_amount, tax_rate, total_amount, currency.
+        STEP 3 — RECONCILIATION & AUDIT RESULTS
+        Once you have ALL transaction data (Step 1) and ALL extracted invoice data
+        (Step 2), call delegate_to_reconciler() passing both datasets as JSON.
+        The Reconciliation Engine subagent compares them, classifies findings, and
+        writes results to BigQuery via write_audit_result().
 
-        STEP 4: RECONCILE each transaction (Step 1) against its corresponding invoice (Step 3).
-                Match by vendor_id and invoice_num. For each pair:
-                - Compare transaction amount vs invoice total_amount (tolerance: $0.01)
-                - Verify tax_rate matches
-                - Check currency consistency
-                - Classify as MATCHED, DISCREPANCY, or UNMATCHED
-
-        STEP 5: For each reconciled pair, call write_audit_result() to record the finding.
-                If any discrepancy exceeds $1,000, set status to ESCALATED.
-
-        STEP 6: Produce a FINAL COMPLIANCE REPORT directly in your response text.
-                Include ALL of the following in your response (not in a separate file):
-                - Total vendors audited
-                - For each vendor: status (MATCHED/DISCREPANCY/ESCALATED), amounts, and rationale
-                - Summary count of matches vs discrepancies
-                - Details of each discrepancy (vendor, amount difference, root cause)
-                - Escalation recommendations for discrepancies over $1,000
+        STEP 4 — FINAL COMPLIANCE REPORT
+        After the reconciler completes, produce a FINAL COMPLIANCE REPORT in your
+        response text. Include:
+        - Total vendors audited
+        - For each vendor: status (MATCHED/DISCREPANCY/ESCALATED), amounts, rationale
+        - Summary count of matches vs discrepancies
+        - Details of each discrepancy (vendor, amount difference, root cause)
+        - Escalation recommendations for discrepancies over $1,000
 
         CRITICAL RULES:
-        - You MUST call read_invoice_from_gcs() for EVERY invoice — do not skip any
-        - Your final response MUST contain the full report text — do NOT just link to a file
-        - Never modify the vendor_transactions table directly
-        - Always escalate discrepancies over $1,000 — do not auto-approve
+        - You MUST call delegate_to_invoice_analyzer() for EVERY invoice — do not skip any
+        - Your final response MUST contain the full report text
+        - Do NOT stop after Step 1 — you must complete all four steps
         - Log every decision with a clear rationale
-        - Do NOT stop after listing invoices — you must read, reconcile, and report
         """,
-        tools=AUDIT_TOOLS,
-        capabilities=CapabilitiesConfig(enable_subagents=True),
+        tools=DELEGATION_TOOLS,
         model="gemini-2.5-flash",
         policies=policies,
         workspaces=[workspace],

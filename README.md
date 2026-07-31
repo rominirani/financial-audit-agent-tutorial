@@ -22,11 +22,13 @@ The key design principle is **separation of concerns**: an agent's *reasoning* (
 
 ## Architecture
 
-- **Audit Orchestrator** — Manages the 4-phase workflow and delegates to subagents
-- **Data Researcher** — Queries BigQuery for pending vendor transactions (read-only)
-- **Invoice Analyzer** — Extracts structured data from PDF invoices in GCS (read-only)
-- **Reconciliation Engine** — Compares datasets and flags mismatches
-- **Human Compliance Gate** — Pauses execution for manual review of high-value discrepancies
+The system implements true multi-agent delegation using the **delegation tools pattern**. The Orchestrator has zero direct access to BigQuery or GCS — it delegates to specialist subagents via wrapper functions that spawn isolated `Agent` instances:
+
+- **Audit Orchestrator** — Coordinates the 4-phase workflow via delegation tools. Cannot touch data directly.
+- **Data Researcher** — Queries BigQuery for pending vendor transactions and lists GCS invoices (read-only)
+- **Invoice Analyzer** — Extracts structured data from PDF invoices in GCS (read-only, one PDF at a time)
+- **Reconciliation Engine** — Compares datasets, flags mismatches, and writes results to BigQuery (write access, policy-gated)
+- **Human Compliance Gate** — Pauses execution for manual review of high-value discrepancies (staging mode)
 
 ## Prerequisites
 

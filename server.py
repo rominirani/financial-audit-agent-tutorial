@@ -23,6 +23,7 @@ from google.antigravity import Agent
 from agents.orchestrator import get_orchestrator_config
 from policies.audit_policies import PRODUCTION_POLICIES
 from hooks.observability import AUDIT_HOOKS
+import tools.delegation_tools as delegation_tools
 
 app = Flask(__name__)
 
@@ -52,6 +53,13 @@ async def _execute_audit(quarter: str, project_id: str) -> dict:
     """Run the agent and return structured results."""
     workspace_dir = os.path.abspath(os.path.dirname(__file__))
 
+    # Configure delegation tools — subagents need project_id and workspace
+    delegation_tools.configure(
+        project_id=project_id,
+        workspace=workspace_dir,
+        reconciler_policies=PRODUCTION_POLICIES,
+    )
+
     config = get_orchestrator_config(
         policies=PRODUCTION_POLICIES,
         workspace=workspace_dir,
@@ -63,9 +71,11 @@ async def _execute_audit(quarter: str, project_id: str) -> dict:
     async with Agent(config) as agent:
         response = await agent.chat(
             f"Execute the full {quarter} vendor invoice reconciliation now. "
-            f"Complete ALL steps: query transactions, list invoices, read EVERY invoice PDF, "
-            f"reconcile each transaction against its invoice, write audit results, "
-            f"and produce the final compliance report. Do not stop until the report is complete."
+            f"Delegate to your specialist subagents: "
+            f"first the Data Researcher to gather transaction data and invoice listings, "
+            f"then the Invoice Analyzer for each PDF, "
+            f"then the Reconciler to compare and write audit results. "
+            f"Produce the final compliance report when all subagents have reported back."
         )
 
         report = await response.text()
