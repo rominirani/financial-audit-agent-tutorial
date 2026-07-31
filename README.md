@@ -24,19 +24,24 @@ This project implements a team of specialized AI agents that reconcile vendor tr
 ## Quick Start
 
 ```bash
-# 1. Set up virtual environment
+# 1. Clone and set up
+git clone https://github.com/rominirani/financial-audit-agent-tutorial.git
+cd financial-audit-agent-tutorial
 python -m venv .venv && source .venv/bin/activate
-pip install google-antigravity google-cloud-bigquery google-cloud-storage reportlab PyPDF2
+pip install -r requirements.txt
 
 # 2. Configure your project
+#    Open tools/bigquery_tools.py and replace YOUR_PROJECT_ID with your GCP project ID
 export PROJECT_ID="your-gcp-project-id"
-# Edit tools/bigquery_tools.py and set PROJECT_ID
 
-# 3. Provision GCP infrastructure (see tutorial for details)
-# Create BigQuery dataset, tables, GCS bucket, and service account
-
-# 4. Generate and upload sample invoices
+# 3. Generate sample invoice PDFs
 python scripts/generate_sample_invoices.py
+
+# 4. Provision GCP infrastructure (see tutorial for full details)
+#    - Create BigQuery dataset and tables
+#    - Create GCS bucket and upload invoices
+#    - Create service account with least-privilege IAM
+gsutil mb -l us-central1 gs://$PROJECT_ID-audit-invoices
 gsutil -m cp data/invoices/*.pdf gs://$PROJECT_ID-audit-invoices/Q3/
 
 # 5. Run the audit
