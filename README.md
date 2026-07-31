@@ -43,11 +43,11 @@ gsutil -m cp data/invoices/*.pdf gs://$PROJECT_ID-audit-invoices/Q3/
 python main.py --mode=dev --quarter=Q3 --project-id=$PROJECT_ID
 ```
 
-## Deployment Modes
+## Policy Tiers
 
-| Mode | Policies | Use Case |
+| Flag | Policies | Use Case |
 |:---|:---|:---|
-| `--mode=dev` | `allow_all()` | Local debugging |
+| `--mode=dev` | `allow_all()` | Debugging with full permissions |
 | `--mode=staging` | Human-in-the-loop for writes | Pre-production testing |
 | `--mode=prod` | Deny-by-default + surgical allowlists | Production deployment |
 
