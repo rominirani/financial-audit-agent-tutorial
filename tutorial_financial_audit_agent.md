@@ -442,8 +442,9 @@ Create the following file with all four tool functions. Each function wraps a Go
 ```python
 from google.cloud import bigquery, storage
 import json
+import os
 
-PROJECT_ID = "YOUR_PROJECT_ID"  # Replace with your GCP project ID
+PROJECT_ID = os.environ.get("PROJECT_ID", "YOUR_PROJECT_ID")
 DATASET = "financial_audit"
 BUCKET_NAME = f"{PROJECT_ID}-audit-invoices"  # GCS bucket for invoice PDFs
 
@@ -903,8 +904,13 @@ except ImportError:
     _tracer = None
     print("⚠️  opentelemetry/cloud-trace not installed. Using console-only tracing.")
 
-# Active trace span for the current session
+# Agent identity — set this to match your orchestrator config name
+AGENT_NAME = "audit-orchestrator"
+
+# Active session span (parent for all tool spans)
 _active_span = None
+# Tool call counter for ordering
+_tool_call_count = 0
 
 
 def _log(severity, message, **kwargs):
@@ -923,38 +929,55 @@ def _log(severity, message, **kwargs):
 
 @on_session_start
 async def audit_session_start():
-    global _active_span
+    global _active_span, _tool_call_count
+    _tool_call_count = 0
+
     print(f"\n{'='*60}")
     print(f"🔍 FINANCIAL AUDIT SESSION STARTED — {datetime.now(UTC).isoformat()}Z")
     print(f"{'='*60}\n")
 
-    _log("INFO", "Audit session started", event="SESSION_START")
+    _log("INFO", "Audit session started", event="SESSION_START", agent=AGENT_NAME)
 
     if CLOUD_TRACE_ENABLED:
+        # Start the root session span. Tool spans will be explicitly
+        # parented under this span using set_span_in_context().
         _active_span = _tracer.start_span("financial-audit-session")
         _active_span.set_attribute("audit.type", "vendor-reconciliation")
-        _active_span.set_attribute("audit.quarter", "Q3")
+        _active_span.set_attribute("agent.name", AGENT_NAME)
 
 
 @post_tool_call
 async def audit_tool_invocation(data: types.ToolResult):
-    """Log every tool call for compliance and create a trace span.
-    
+    """Log every tool call for compliance and create a child trace span.
+
     The @post_tool_call hook receives a types.ToolResult object after
-    each tool execution completes. We extract the tool name and log it.
+    each tool execution completes. We create a child span explicitly
+    parented under the session span so it appears nested in Cloud Trace.
     """
+    global _tool_call_count
+    _tool_call_count += 1
+
     tool_name = data.name if hasattr(data, 'name') else str(data)
-    agent_id = str(data.agent_id) if hasattr(data, 'agent_id') else "unknown"
 
     _log("INFO", f"Tool invoked: {tool_name}",
          event="TOOL_INVOCATION",
-         agent_id=agent_id,
-         tool=tool_name)
+         agent=AGENT_NAME,
+         tool=tool_name,
+         tool_call_index=_tool_call_count)
 
-    if CLOUD_TRACE_ENABLED and _tracer:
-        with _tracer.start_as_current_span(f"tool:{tool_name}") as span:
-            span.set_attribute("tool.name", tool_name)
-            span.set_attribute("agent.id", agent_id)
+    if CLOUD_TRACE_ENABLED and _tracer and _active_span:
+        # Create a child span explicitly parented under the session span.
+        # set_span_in_context() tells the tracer to use _active_span as
+        # the parent, so the tool span appears nested in the trace view.
+        parent_ctx = trace.set_span_in_context(_active_span)
+        tool_span = _tracer.start_span(
+            f"tool:{tool_name}",
+            context=parent_ctx,
+        )
+        tool_span.set_attribute("tool.name", tool_name)
+        tool_span.set_attribute("tool.call_index", _tool_call_count)
+        tool_span.set_attribute("agent.name", AGENT_NAME)
+        tool_span.end()
 
 
 @on_session_end
@@ -964,9 +987,13 @@ async def audit_session_end():
     print(f"✅ FINANCIAL AUDIT SESSION COMPLETED — {datetime.now(UTC).isoformat()}Z")
     print(f"{'='*60}\n")
 
-    _log("INFO", "Audit session completed", event="SESSION_END")
+    _log("INFO", "Audit session completed",
+         event="SESSION_END",
+         agent=AGENT_NAME,
+         total_tool_calls=_tool_call_count)
 
     if CLOUD_TRACE_ENABLED and _active_span:
+        _active_span.set_attribute("audit.total_tool_calls", _tool_call_count)
         _active_span.end()
         _active_span = None
 
@@ -975,9 +1002,9 @@ AUDIT_HOOKS = [audit_session_start, audit_tool_invocation, audit_session_end]
 ```
 
 **What each hook does:**
-- `@on_session_start` — Fires when the agent session begins. Creates a Cloud Trace span and logs the start event to Cloud Logging.
-- `@post_tool_call` — Fires after every tool invocation. Receives a `types.ToolResult` object. Logs the tool name and agent ID to Cloud Logging and creates a child span in Cloud Trace. This is the core of your compliance audit trail.
-- `@on_session_end` — Fires when the session ends. Closes the trace span and logs the completion event.
+- `@on_session_start` — Fires when the agent session begins. Creates a root Cloud Trace span and logs the start event to Cloud Logging.
+- `@post_tool_call` — Fires after every tool invocation. Receives a `types.ToolResult` object. Logs the tool name and `AGENT_NAME` to Cloud Logging. Creates a child span explicitly parented under the session span using `trace.set_span_in_context()` — this is what makes tool spans appear nested in the Cloud Trace waterfall.
+- `@on_session_end` — Fires when the session ends. Records `total_tool_calls`, closes the trace span, and logs the completion event.
 
 > **💡 Tip:** The hooks use graceful degradation — if `google-cloud-logging` or `opentelemetry` aren't installed, they fall back to console-only output. This means the same code works in both local development and production without conditional imports.
 
@@ -1452,7 +1479,7 @@ gcloud logging read \
    jsonPayload.event="TOOL_INVOCATION"' \
   --project=$PROJECT_ID \
   --limit=20 \
-  --format='table(timestamp, jsonPayload.tool, jsonPayload.agent_id)'
+  --format='table(timestamp, jsonPayload.tool, jsonPayload.agent)'
 
 # Filter for session lifecycle events
 gcloud logging read \
@@ -1512,22 +1539,144 @@ grep -c "TOOL_INVOCATION" ~/.gemini/antigravity/brain/<conversation-id>/.system_
 
 Antigravity uses a dual-transcript system. The `transcript.jsonl` provides a compact version for quick scanning and debugging. The `transcript_full.jsonl` contains complete, untruncated tool outputs — the definitive forensic evidence trail required by auditors.
 
-**Step 5.11: Deploy to Cloud Run (Stretch Goal)**
+**Step 5.11: Deploy to Cloud Run**
 
-When ready for production, containerize your agent and deploy to Cloud Run for scalable, secure execution:
+The repository includes a `Dockerfile` and `server.py` that wrap the agent in a Flask HTTP server for Cloud Run deployment. The server uses `PRODUCTION_POLICIES` (fully autonomous, no human prompts) since there's no terminal for interactive approval.
+
+**5.11a: The Dockerfile**
+
+The Dockerfile uses `python:3.11-slim` with gunicorn as the production WSGI server. The 300-second timeout accommodates the agent's multi-step reconciliation workflow:
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt flask gunicorn
+
+# Copy application code
+COPY . .
+
+# Cloud Run sets PORT env var (default 8080)
+ENV PORT=8080
+
+# Run with gunicorn for production
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 300 server:app
+```
+
+**5.11b: The HTTP Server** (`server.py`)
+
+The server exposes two endpoints: `POST /audit` to run the reconciliation and `GET /health` for Cloud Run health checks. It reads `PROJECT_ID` from the environment variable (set during deployment):
+```python
+import asyncio
+import json
+import os
+
+from flask import Flask, request, jsonify
+from google.antigravity import Agent
+
+from agents.orchestrator import get_orchestrator_config
+from policies.audit_policies import PRODUCTION_POLICIES
+from hooks.observability import AUDIT_HOOKS
+
+app = Flask(__name__)
+
+@app.route("/audit", methods=["POST"])
+def run_audit():
+    data = request.get_json(silent=True) or {}
+    quarter = data.get("quarter", "Q3")
+    project_id = os.environ.get("PROJECT_ID")
+
+    if not project_id:
+        return jsonify({"error": "PROJECT_ID environment variable is not set"}), 500
+
+    result = asyncio.run(_execute_audit(quarter, project_id))
+    return jsonify(result)
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "healthy"}), 200
+
+async def _execute_audit(quarter: str, project_id: str) -> dict:
+    workspace_dir = os.path.abspath(os.path.dirname(__file__))
+    config = get_orchestrator_config(
+        policies=PRODUCTION_POLICIES,
+        workspace=workspace_dir,
+        project_id=project_id,
+        quarter=quarter,
+    )
+    config.hooks = AUDIT_HOOKS
+
+    async with Agent(config) as agent:
+        response = await agent.chat(
+            f"Execute the full {quarter} vendor invoice reconciliation now. "
+            f"Complete ALL steps: query transactions, list invoices, read EVERY invoice PDF, "
+            f"reconcile each transaction against its invoice, write audit results, "
+            f"and produce the final compliance report. Do not stop until the report is complete."
+        )
+        report = await response.text()
+        usage = agent.conversation.total_usage
+
+    return {
+        "quarter": quarter,
+        "report": report,
+        "token_usage": {
+            "prompt_tokens": usage.prompt_token_count,
+            "output_tokens": usage.candidates_token_count,
+            "total_tokens": usage.total_token_count,
+        },
+    }
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=False)
+```
+
+**5.11c: Deploy to Cloud Run**
 ```bash
-# Build a container image
-gcloud builds submit --tag gcr.io/$PROJECT_ID/financial-audit-agent
-
-# Deploy to Cloud Run with the audit service account
+# Deploy directly from source (Cloud Build + Cloud Run in one step)
 gcloud run deploy financial-audit-agent \
-  --image gcr.io/$PROJECT_ID/financial-audit-agent \
-  --service-account audit-agent-sa@$PROJECT_ID.iam.gserviceaccount.com \
+  --source . \
   --region us-central1 \
+  --set-env-vars PROJECT_ID=$PROJECT_ID \
+  --timeout 300 \
+  --memory 1Gi \
+  --service-account audit-agent-sa@$PROJECT_ID.iam.gserviceaccount.com \
   --no-allow-unauthenticated
 ```
 
-> **📝 Note:** You'll need to create a `Dockerfile` that installs your dependencies and runs `main.py`. The service account from Step 4.4 provides the same least-privilege IAM roles in Cloud Run as it does locally.
+**5.11d: Invoke the Deployed Agent**
+```bash
+# Get the service URL
+SERVICE_URL=$(gcloud run services describe financial-audit-agent \
+  --region us-central1 --format 'value(status.url)')
+
+# Invoke with authentication
+curl -X POST "$SERVICE_URL/audit" \
+  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  -H "Content-Type: application/json" \
+  -d '{"quarter": "Q3"}'
+```
+
+The response is a JSON object containing the full compliance report and token usage:
+```json
+{
+  "quarter": "Q3",
+  "report": "## Final Compliance Report\n\n### Vendor 8492 — DISCREPANCY...",
+  "token_usage": {
+    "prompt_tokens": 32054,
+    "output_tokens": 1200,
+    "total_tokens": 33254
+  }
+}
+```
+
+> **🔑 Key Insight:** The same code runs locally (`python main.py`) and on Cloud Run (`server.py`). The difference is the entry point: CLI vs HTTP. The `PROJECT_ID` is read from an environment variable (`os.environ.get("PROJECT_ID")`) so no code changes are needed between environments.
 
 ---
 
@@ -1537,6 +1686,6 @@ gcloud run deploy financial-audit-agent \
 - Add Slack/Teams notifications via custom hooks to alert human operators in real-time.
 - Implement the Consensus Mesh topology for cross-department audit verification, having multiple agents debate the discrepancy before escalating.
 - Expand the eval dataset (Step 5.8) with edge cases — partial matches, missing PDFs, multi-currency vendors — and run them after every prompt change.
-- Add a `Dockerfile` and deploy to Cloud Run (Step 5.11) for scheduled, serverless execution.
+- Use Cloud Scheduler to trigger the Cloud Run endpoint on a recurring schedule (e.g., nightly at 2 AM) for automated reconciliation.
 
 This tutorial demonstrated the core pattern of multi-agent orchestration, declarative safety policies, and comprehensive observability. The same architecture scales to any enterprise workflow — from automated incident response and code reviews to complex legal document analysis — providing the security and governance required for production AI systems.

@@ -105,6 +105,31 @@ Run the eval suite to verify the agent handles all test scenarios correctly:
 python eval/run_eval.py --project-id=$PROJECT_ID
 ```
 
+## Cloud Run Deployment
+
+Deploy the agent as an HTTP service on Cloud Run:
+```bash
+gcloud run deploy financial-audit-agent \
+  --source . \
+  --region us-central1 \
+  --set-env-vars PROJECT_ID=$PROJECT_ID \
+  --timeout 300 \
+  --memory 1Gi \
+  --service-account audit-agent-sa@$PROJECT_ID.iam.gserviceaccount.com \
+  --no-allow-unauthenticated
+```
+
+Invoke the deployed agent:
+```bash
+SERVICE_URL=$(gcloud run services describe financial-audit-agent \
+  --region us-central1 --format 'value(status.url)')
+
+curl -X POST "$SERVICE_URL/audit" \
+  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  -H "Content-Type: application/json" \
+  -d '{"quarter": "Q3"}'
+```
+
 ## Tutorial
 
 For the complete step-by-step tutorial explaining every design decision, see the companion article on building this system from scratch.
