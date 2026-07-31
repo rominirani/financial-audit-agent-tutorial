@@ -21,25 +21,20 @@ DEVELOPMENT_POLICIES = [
 
 STAGING_POLICIES = [
     policy.deny_all(),
-    policy.allow("view_file"),
-    policy.allow("list_dir"),
-    policy.allow("grep_search"),
-    policy.allow("bigquery_query"),
-    policy.ask_user("run_command", handler=compliance_officer_approval_handler),
+    # Read-only tools — allowed without approval
+    policy.allow("query_vendor_transactions"),
+    policy.allow("list_invoices_in_gcs"),
+    policy.allow("read_invoice_from_gcs"),
+    # Write tools — require human approval
+    policy.ask_user("write_audit_result", handler=compliance_officer_approval_handler),
 ]
 
 PRODUCTION_POLICIES = [
     policy.deny_all(),
-    policy.allow("view_file"),
-    policy.allow("list_dir"),
-    policy.allow("grep_search"),
-    policy.allow("bigquery_query",
-                 when=lambda args: args.get("Query", "").strip().upper().startswith("SELECT"),
-                 name="allow_bq_select_only"),
-    policy.deny("run_command",
-                when=lambda args: any(cmd in args.get("CommandLine", "") for cmd in ["rm", "DROP", "DELETE", "kubectl"]),
-                name="deny_destructive_commands"),
-    policy.ask_user("write_to_file",
-                    when=lambda args: "audit_results" in args.get("TargetFile", ""),
-                    handler=compliance_officer_approval_handler),
+    # Read-only tools — allowed without approval
+    policy.allow("query_vendor_transactions"),
+    policy.allow("list_invoices_in_gcs"),
+    policy.allow("read_invoice_from_gcs"),
+    # Write tools — require approval and only for recording audit findings
+    policy.ask_user("write_audit_result", handler=compliance_officer_approval_handler),
 ]
