@@ -32,6 +32,9 @@ except ImportError:
     _tracer = None
     print("⚠️  opentelemetry/cloud-trace not installed. Using console-only tracing.")
 
+# Agent identity — set this to match your orchestrator config name
+AGENT_NAME = "audit-orchestrator"
+
 # Active trace span for the current session
 _active_span = None
 
@@ -57,7 +60,7 @@ async def audit_session_start():
     print(f"🔍 FINANCIAL AUDIT SESSION STARTED — {datetime.now(UTC).isoformat()}Z")
     print(f"{'='*60}\n")
 
-    _log("INFO", "Audit session started", event="SESSION_START")
+    _log("INFO", "Audit session started", event="SESSION_START", agent=AGENT_NAME)
 
     if CLOUD_TRACE_ENABLED:
         _active_span = _tracer.start_span("financial-audit-session")
@@ -73,17 +76,16 @@ async def audit_tool_invocation(data: types.ToolResult):
     each tool execution completes. We extract the tool name and log it.
     """
     tool_name = data.name if hasattr(data, 'name') else str(data)
-    agent_id = str(data.agent_id) if hasattr(data, 'agent_id') else "unknown"
 
     _log("INFO", f"Tool invoked: {tool_name}",
          event="TOOL_INVOCATION",
-         agent_id=agent_id,
+         agent=AGENT_NAME,
          tool=tool_name)
 
     if CLOUD_TRACE_ENABLED and _tracer:
         with _tracer.start_as_current_span(f"tool:{tool_name}") as span:
             span.set_attribute("tool.name", tool_name)
-            span.set_attribute("agent.id", agent_id)
+            span.set_attribute("agent.name", AGENT_NAME)
 
 
 @on_session_end
@@ -93,7 +95,7 @@ async def audit_session_end():
     print(f"✅ FINANCIAL AUDIT SESSION COMPLETED — {datetime.now(UTC).isoformat()}Z")
     print(f"{'='*60}\n")
 
-    _log("INFO", "Audit session completed", event="SESSION_END")
+    _log("INFO", "Audit session completed", event="SESSION_END", agent=AGENT_NAME)
 
     if CLOUD_TRACE_ENABLED and _active_span:
         _active_span.end()
