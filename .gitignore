@@ -22,3 +22,12 @@ data/invoices/*.pdf
 .vscode/
 *.swp
 *.swo
+
+# Tutorial article (maintained separately)
+tutorial_financial_audit_agent.md
+tutorial.html
+generate_html.py
+index.html
+convert.py
+validate_tutorial_code.py
+architecting_autonomous_enterprise_workflows.md
