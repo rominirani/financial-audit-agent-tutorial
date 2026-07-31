@@ -6,6 +6,20 @@ An autonomous multi-agent financial reconciliation system built with the [Google
 
 This project implements a team of specialized AI agents that reconcile vendor transactions (from BigQuery) against invoice PDFs (from Cloud Storage), flag discrepancies, and escalate findings above $1,000 for human review.
 
+## Why the Google Antigravity SDK?
+
+Building a production-grade multi-agent system from raw LLM API calls means wiring up agent lifecycle management, tool registration, inter-agent communication, policy enforcement, and observability — before writing any business logic. The [Google Antigravity SDK](https://github.com/google-antigravity/antigravity-sdk-python) handles all of that:
+
+| Capability | What the SDK Provides |
+|:---|:---|
+| **Agent Configuration** | `LocalAgentConfig` — declarative definitions with system instructions, tools, and sub-agent spawning |
+| **Tool Registration** | Pass plain Python functions as `tools=[...]` — schemas are auto-generated from type hints and docstrings |
+| **Safety Policies** | `policy.allow()`, `policy.deny()`, `policy.ask_user()` — composable rules that gate every tool call |
+| **Lifecycle Hooks** | `@on_session_start`, `@post_tool_call`, `@on_session_end` — inject logging and tracing without touching agent logic |
+| **Vertex AI Integration** | Native Gemini model connection via Application Default Credentials |
+
+The key design principle is **separation of concerns**: an agent's *reasoning* (system instructions + tools) is defined independently from its *governance* (policies + hooks). You can swap from a permissive dev policy to a locked-down production policy without changing a single line of agent code.
+
 ## Architecture
 
 - **Audit Orchestrator** — Manages the 4-phase workflow and delegates to subagents
