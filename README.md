@@ -30,9 +30,7 @@ cd financial-audit-agent-tutorial
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Configure your project
-#    Open tools/bigquery_tools.py and replace YOUR_PROJECT_ID with your GCP project ID.
-#    BUCKET_NAME is auto-derived as {PROJECT_ID}-audit-invoices — no extra config needed.
+# 2. Configure your project (PROJECT_ID is read from the environment, no file edits needed)
 export PROJECT_ID="your-gcp-project-id"
 gcloud config set project $PROJECT_ID
 

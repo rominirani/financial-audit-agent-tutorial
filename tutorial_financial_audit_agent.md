@@ -66,8 +66,12 @@ You should see:
 ✅ Generated 4 sample invoice PDFs in /path/to/data/invoices
 ```
 
-> **⚠️ Important — Configure your project before running any code:**
-> Open `tools/bigquery_tools.py` and replace the placeholder `YOUR_PROJECT_ID` with your actual GCP project ID. This value is referenced throughout the codebase for BigQuery queries, Cloud Storage operations, and audit result writes. You will also pass `--project-id=YOUR_PROJECT_ID` when running `main.py`.
+> **❗ Important — Set your project ID before running any code:**
+> The codebase reads `PROJECT_ID` from the environment variable. Set it once in your terminal session:
+> ```bash
+> export PROJECT_ID="your-gcp-project-id"
+> ```
+> This value is used for BigQuery queries, Cloud Storage bucket naming (`$PROJECT_ID-audit-invoices`), and audit result writes. You will also pass `--project-id=$PROJECT_ID` when running `main.py`.
 
 The script generates 4 invoice PDFs with deliberately planted discrepancies between what the vendor's invoice says and what the ERP system (BigQuery) recorded. This is what the agent must discover:
 
@@ -297,8 +301,8 @@ execution_id:STRING,vendor_id:STRING,invoice_num:STRING,transaction_amount:FLOAT
 
 Populate the transactions table with ERP data. These represent what your company's accounting system has recorded — amounts, tax rates, currencies, and invoice numbers. Think of this as the "source of truth" from the internal financial system:
 ```sql
--- Run this in the BigQuery Console or via bq query
-INSERT INTO `YOUR_PROJECT_ID.financial_audit.vendor_transactions` 
+-- Run this in the BigQuery Console or via: bq query --use_legacy_sql=false '...'
+INSERT INTO `'$PROJECT_ID'.financial_audit.vendor_transactions`
 (vendor_id, vendor_name, invoice_num, amount, currency, tax_rate, status, quarter, transaction_date) VALUES
 ('8492', 'TechCorp Solutions', 'INV-8492-Q3-001', 142300.00, 'USD', 0.085, 'PENDING', 'Q3', '2026-07-15'),
 ('1022', 'OfficeSupplies Co', 'INV-1022-Q3-014', 4500.00, 'USD', 0.05, 'PENDING', 'Q3', '2026-07-20'),
@@ -914,7 +918,7 @@ async def run_eval(eval_file: str, project_id: str):
 **5.8c: Run the Evaluations**
 
 ```bash
-python eval/run_eval.py --project-id=YOUR_PROJECT_ID
+python eval/run_eval.py --project-id=$PROJECT_ID
 ```
 
 Expected output:
@@ -952,7 +956,7 @@ If a case fails, the runner prints which keywords were missing and a preview of 
 
 Before running, confirm all the prerequisites from earlier steps are in place:
 
-- [ ] `tools/bigquery_tools.py` has your actual `PROJECT_ID` (not the placeholder) — Section 1.3
+- [ ] `PROJECT_ID` environment variable is set (`export PROJECT_ID="your-project-id"`) — Section 1.3
 - [ ] Sample invoice PDFs generated in `data/invoices/` — Section 1.3
 - [ ] BigQuery dataset `financial_audit` with both tables created and populated — Step 4.2
 - [ ] GCS bucket `gs://$PROJECT_ID-audit-invoices` with invoice PDFs uploaded to `Q3/` — Step 4.3
@@ -962,7 +966,7 @@ Before running, confirm all the prerequisites from earlier steps are in place:
 Run the agent with:
 
 ```bash
-python main.py --mode=dev --quarter=Q3 --project-id=YOUR_PROJECT_ID
+python main.py --mode=dev --quarter=Q3 --project-id=$PROJECT_ID
 ```
 
 The command accepts three flags:
@@ -982,7 +986,7 @@ Try each policy tier to see how the SDK's policy system changes agent behavior:
 Development mode uses `allow_all()` — the agent has full, unrestricted permissions. This is ideal for debugging prompt logic and verifying the end-to-end workflow:
 
 ```bash
-python main.py --mode=dev --quarter=Q3 --project-id=YOUR_PROJECT_ID
+python main.py --mode=dev --quarter=Q3 --project-id=$PROJECT_ID
 ```
 
 The agent runs without interruption — freely querying BigQuery, spawning subagents, reading PDFs from GCS, and writing results. Here is what a successful dev run looks like:
@@ -990,7 +994,7 @@ The agent runs without interruption — freely querying BigQuery, spawning subag
 ```
 🚀 Starting Financial Audit — Mode: dev, Quarter: Q3
 📋 Policies: 1 rules loaded
-🔗 Vertex AI: YOUR_PROJECT_ID
+🔗 Vertex AI: $PROJECT_ID
 
 ============================================================
 🔍 FINANCIAL AUDIT SESSION STARTED — 2026-07-30T04:16:24Z
@@ -1049,7 +1053,7 @@ requiring immediate escalation.
 Staging mode uses human-in-the-loop policies — the agent can read freely but **pauses and prompts for approval** before any write operation. This is for pre-production testing where you want to validate the agent's decisions before they're committed:
 
 ```bash
-python main.py --mode=staging --quarter=Q3 --project-id=YOUR_PROJECT_ID
+python main.py --mode=staging --quarter=Q3 --project-id=$PROJECT_ID
 ```
 
 The agent queries BigQuery and reads PDFs without interruption, but when it tries to call `write_audit_result`, you'll see an interactive prompt:
@@ -1057,7 +1061,7 @@ The agent queries BigQuery and reads PDFs without interruption, but when it trie
 ```
 🚀 Starting Financial Audit — Mode: staging, Quarter: Q3
 📋 Policies: 5 rules loaded
-🔗 Vertex AI: YOUR_PROJECT_ID
+🔗 Vertex AI: $PROJECT_ID
 
 ============================================================
 🔍 FINANCIAL AUDIT SESSION STARTED
@@ -1083,13 +1087,13 @@ Compliance Officer, approve this action? (y/n): y    ← You type 'y' to approve
 Production mode runs fully autonomously — no human prompts. Reads are allowed, and writes are auto-approved but **only** if the `status` argument is a valid value (`MATCHED`, `DISCREPANCY`, `ESCALATED`, or `UNMATCHED`). This mode is designed for unattended execution on Cloud Run or cron:
 
 ```bash
-python main.py --mode=prod --quarter=Q3 --project-id=YOUR_PROJECT_ID
+python main.py --mode=prod --quarter=Q3 --project-id=$PROJECT_ID
 ```
 
 ```
 🚀 Starting Financial Audit — Mode: prod, Quarter: Q3
 📋 Policies: 5 rules loaded
-🔗 Vertex AI: YOUR_PROJECT_ID
+🔗 Vertex AI: $PROJECT_ID
 
 ============================================================
 🔍 FINANCIAL AUDIT SESSION STARTED
@@ -1168,7 +1172,7 @@ gcloud logging read \
 
 **Console path:** [Cloud Logging](https://console.cloud.google.com/logs/query) → In the query box, enter:
 ```
-logName="projects/YOUR_PROJECT_ID/logs/financial-audit-agent"
+logName="projects/$PROJECT_ID/logs/financial-audit-agent"
 ```
 Click **Run query**. You should see structured JSON entries for every tool call, session start, and session end. Use the **Severity** dropdown to filter by INFO, WARNING, or ERROR.
 
@@ -1201,7 +1205,7 @@ gsutil ls -l gs://$PROJECT_ID-audit-invoices/Q3/
 gsutil stat gs://$PROJECT_ID-audit-invoices/Q3/INV-8492-Q3-001.pdf
 ```
 
-**Console path:** [Cloud Storage Browser](https://console.cloud.google.com/storage/browser) → Click on the `YOUR_PROJECT_ID-audit-invoices` bucket → Navigate to the `Q3/` folder. You should see the 4 uploaded invoice PDFs.
+**Console path:** [Cloud Storage Browser](https://console.cloud.google.com/storage/browser) → Click on the `$PROJECT_ID-audit-invoices` bucket → Navigate to the `Q3/` folder. You should see the 4 uploaded invoice PDFs.
 
 **5.10e: Review Local Transcripts & Audit Trail**
 To trace exactly what happened locally:
