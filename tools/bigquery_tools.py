@@ -1,7 +1,8 @@
 from google.cloud import bigquery, storage
 import json
+import os
 
-PROJECT_ID = "YOUR_PROJECT_ID"  # Replace with your GCP project ID
+PROJECT_ID = os.environ.get("PROJECT_ID", "YOUR_PROJECT_ID")
 DATASET = "financial_audit"
 BUCKET_NAME = f"{PROJECT_ID}-audit-invoices"  # GCS bucket for invoice PDFs
 
