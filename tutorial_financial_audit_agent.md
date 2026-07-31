@@ -100,7 +100,7 @@ The repository structure:
     └── run_eval.py
 ```
 
-> **💡 Tip:** You can follow this tutorial in two ways: (1) read through and build each file from scratch to understand every decision, or (2) clone the repo first and use the tutorial as a guided walkthrough of the existing code. Either way, you'll need to provision the GCP infrastructure in Sections 3–4.
+> **💡 Tip:** Clone the [repository](https://github.com/rominirani/financial-audit-agent-tutorial) first and use this tutorial as a guided walkthrough of the code. You'll need to provision the GCP infrastructure in Sections 3–4 before running the agent.
 
 **1.4 Tutorial Approach**
 This tutorial uses a fully cloud-native approach with real GCP services: BigQuery, Cloud Storage, Cloud Logging, and Cloud Trace. You will provision real infrastructure and validate results against live data.
@@ -385,41 +385,15 @@ You should see `roles/bigquery.dataViewer`, `roles/bigquery.jobUser`, `roles/log
 
 ### Section 5: Antigravity SDK Code — Step by Step
 
-**Step 5.1: Project Scaffolding**
+**Step 5.1: Clone the Repository and Install Dependencies**
 
-Create the project directory, set up a Python virtual environment, and install the core dependencies. `google-antigravity` is the SDK itself; `google-cloud-bigquery` and `google-cloud-storage` provide the GCP client libraries your tools will wrap; `reportlab` generates sample invoice PDFs; and `PyPDF2` enables PDF text extraction at runtime:
+Clone the repository, set up a Python virtual environment, and install the dependencies. `google-antigravity` is the SDK itself; `google-cloud-bigquery` and `google-cloud-storage` provide the GCP client libraries your tools will wrap; `reportlab` generates sample invoice PDFs; and `PyPDF2` enables PDF text extraction at runtime:
 
 ```bash
-mkdir financial-audit-agent && cd financial-audit-agent
+git clone https://github.com/rominirani/financial-audit-agent-tutorial.git
+cd financial-audit-agent-tutorial
 python -m venv .venv && source .venv/bin/activate
-pip install google-antigravity google-cloud-bigquery google-cloud-storage reportlab PyPDF2
-```
-
-Create the directory structure. Each directory corresponds to a separation of concerns — `agents/` holds agent configurations, `tools/` holds GCP client wrappers, `policies/` holds security rule sets, `hooks/` holds observability integrations, and `eval/` holds test datasets:
-```
-financial-audit-agent/
-├── main.py
-├── run_audit.py
-├── agents/
-│   ├── __init__.py
-│   ├── orchestrator.py
-│   ├── data_researcher.py
-│   ├── invoice_analyzer.py
-│   └── reconciler.py
-├── tools/
-│   ├── __init__.py
-│   └── bigquery_tools.py
-├── policies/
-│   ├── __init__.py
-│   └── audit_policies.py
-├── hooks/
-│   ├── __init__.py
-│   └── observability.py
-
-├── eval/
-│   ├── eval_dataset.jsonl
-│   └── run_eval.py
-└── README.md
+pip install -r requirements.txt
 ```
 
 **Step 5.2: Define Custom Tools**
@@ -437,7 +411,7 @@ Each tool is a standard Python function with type hints and a descriptive docstr
 
 **Step 5.2b: Implement the Tools** (`tools/bigquery_tools.py`)
 
-Create the following file with all four tool functions. Each function wraps a Google Cloud client library call and returns a JSON string that the agent can parse and reason over.
+This file contains all four tool functions. Each function wraps a Google Cloud client library call and returns a JSON string that the agent can parse and reason over.
 
 ```python
 from google.cloud import bigquery, storage
@@ -890,11 +864,11 @@ if __name__ == "__main__":
 
 **Step 5.8: Evaluate the Agent**
 
-Evaluations let you systematically test the agent against known scenarios to catch regressions. You'll create two files: a dataset of test cases and a runner script.
+Evaluations let you systematically test the agent against known scenarios to catch regressions. The repo includes two files: a dataset of test cases and a runner script.
 
-**5.8a: Create the Evaluation Dataset** — `eval/eval_dataset.jsonl`
+**5.8a: The Evaluation Dataset** — `eval/eval_dataset.jsonl`
 
-Each line is a JSON object with three fields: `input` (the prompt to send), `expected_outcome` (keywords the response must contain), and `expected_tools` (which tools should be invoked). Create this file:
+Each line is a JSON object with three fields: `input` (the prompt to send), `expected_outcome` (keywords the response must contain), and `expected_tools` (which tools should be invoked):
 
 ```jsonl
 {"input": "Reconcile vendor 8492 for Q3.", "expected_outcome": "discrepancy, tax, escalat", "expected_tools": ["query_vendor_transactions", "list_invoices_in_gcs", "read_invoice_from_gcs"]}
@@ -903,7 +877,7 @@ Each line is a JSON object with three fields: `input` (the prompt to send), `exp
 {"input": "Reconcile vendor 5567 for Q3.", "expected_outcome": "duplicate, invoice", "expected_tools": ["query_vendor_transactions", "list_invoices_in_gcs", "read_invoice_from_gcs"]}
 ```
 
-**5.8b: Create the Eval Runner Script** — `eval/run_eval.py`
+**5.8b: The Eval Runner Script** — `eval/run_eval.py`
 
 This script loads the dataset, sends each test case to the agent, and checks whether the expected keywords appear in the response. It reuses the same `Agent` API and orchestrator config from `main.py`:
 
