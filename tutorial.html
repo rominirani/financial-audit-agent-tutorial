@@ -535,20 +535,13 @@ import os
 
 PROJECT_ID = os.environ.get("PROJECT_ID", "YOUR_PROJECT_ID")
 DATASET = "financial_audit"
-BUCKET_NAME = f"{PROJECT_ID}-audit-invoices"  # GCS bucket for invoice PDFs
+BUCKET_NAME = f"{PROJECT_ID}-audit-invoices"
 
 _client = bigquery.Client(project=PROJECT_ID)
 
 
 def query_vendor_transactions(quarter: str = "Q3") -> str:
-    """Query BigQuery for all PENDING vendor transactions in a given quarter.
-
-    Args:
-        quarter: The fiscal quarter to query (e.g. "Q3").
-
-    Returns:
-        JSON string with the transaction records.
-    """
+    """Query BigQuery for all PENDING vendor transactions in a given quarter."""
     query = f"""
     SELECT vendor_id, vendor_name, invoice_num, amount, currency, tax_rate, status, quarter, transaction_date
     FROM `{PROJECT_ID}.{DATASET}.vendor_transactions`
@@ -556,169 +549,29 @@ def query_vendor_transactions(quarter: str = "Q3") -> str:
     ORDER BY vendor_id, invoice_num
     """
     rows = _client.query(query).result()
-    results = []
-    for row in rows:
-        results.append({
-            "vendor_id": row.vendor_id,
-            "vendor_name": row.vendor_name,
-            "invoice_num": row.invoice_num,
-            "amount": row.amount,
-            "currency": row.currency,
-            "tax_rate": row.tax_rate,
-            "status": row.status,
-            "quarter": row.quarter,
-            "transaction_date": str(row.transaction_date),
-        })
+    results = [{"vendor_id": row.vendor_id, "amount": row.amount, ...} for row in rows]
     return json.dumps({"total_transactions": len(results), "transactions": results}, indent=2)
 
 
-def list_invoices_in_gcs(bucket_name: str = BUCKET_NAME, prefix: str = "Q3/") -> str:
-    """List all invoice PDF files in a Google Cloud Storage bucket.
-
-    Args:
-        bucket_name: The GCS bucket name. Defaults to {PROJECT_ID}-audit-invoices.
-        prefix: Path prefix to filter by (e.g. "Q3/" for Q3 invoices).
-
-    Returns:
-        JSON string with the list of invoice file paths.
-    """
-    storage_client = storage.Client(project=PROJECT_ID)
-    bucket = storage_client.bucket(bucket_name)
-    blobs = bucket.list_blobs(prefix=prefix)
-    invoices = []
-    for blob in blobs:
-        if blob.name.endswith(".pdf"):
-            invoices.append({
-                "name": blob.name,
-                "size_bytes": blob.size,
-                "gs_uri": f"gs://{bucket_name}/{blob.name}",
-            })
-    return json.dumps({"total_invoices": len(invoices), "invoices": invoices}, indent=2)
+def list_invoices_in_gcs(bucket_name: str, prefix: str = "Q3/") -> str:
+    """List all invoice PDF files in a Google Cloud Storage bucket."""
+    ...
 
 
-def read_invoice_from_gcs(bucket_name: str = BUCKET_NAME, invoice_path: str = "") -> str:
-    """Read an invoice PDF from Google Cloud Storage and extract its structured data.
-
-    Downloads the PDF, parses its text content, and returns structured fields
-    including vendor ID, invoice number, amounts, tax rate, and currency.
-
-    Args:
-        bucket_name: The GCS bucket name. Defaults to {PROJECT_ID}-audit-invoices.
-        invoice_path: Path to the invoice within the bucket (e.g. "Q3/INV-8492-Q3-001.pdf").
-
-    Returns:
-        JSON string with extracted invoice data (vendor_id, invoice_num,
-        base_amount, tax_rate, tax_amount, total_amount, currency).
-    """
-    import re
-    import tempfile
-    storage_client = storage.Client(project=PROJECT_ID)
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(invoice_path)
-
-    if not blob.exists():
-        return json.dumps({"error": f"Invoice not found: gs://{bucket_name}/{invoice_path}"})
-
-    # Download PDF to temp file and extract text
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
-        blob.download_to_filename(tmp.name)
-
-        # Extract text using PyPDF2
-        from PyPDF2 import PdfReader
-        reader = PdfReader(tmp.name)
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text() or ""
-
-    # Parse structured fields from the extracted text
-    result = {
-        "gs_uri": f"gs://{bucket_name}/{invoice_path}",
-        "raw_text": text,
-        "vendor_id": _extract(r"ID:\s*(\d+)", text),
-        "vendor_name": _extract(r"Vendor:\s*(.+?)\s*\(", text),
-        "invoice_num": _extract(r"INVOICE:\s*(INV-[\w-]+)", text),
-        "base_amount": _extract_float(r"Base Amount:\s*([\d,.]+)", text),
-        "tax_rate": _extract_float(r"Tax Rate:\s*([\d.]+)%", text),
-        "tax_amount": _extract_float(r"Tax Amount:\s*([\d,.]+)", text),
-        "total_amount": _extract_float(r"TOTAL:\s*([\d,.]+)", text),
-        "currency": _extract(r"TOTAL:\s*[\d,.]+\s+(\w{3})", text),
-    }
-    # Convert tax_rate from percentage to decimal if found
-    if result["tax_rate"] is not None:
-        result["tax_rate"] = round(result["tax_rate"] / 100, 4)
-
-    return json.dumps(result, indent=2)
+def read_invoice_from_gcs(bucket_name: str, blob_name: str) -> str:
+    """Read and extract structured data from an invoice PDF stored in GCS."""
+    ...
 
 
-def _extract(pattern: str, text: str) -> str | None:
-    """Extract a single regex match from text."""
-    import re
-    m = re.search(pattern, text)
-    return m.group(1).strip() if m else None
+def write_audit_result(vendor_id: str, invoice_num: str, status: str, ...) -> str:
+    """Write an audit reconciliation result to the BigQuery audit_results table."""
+    ...
 
 
-def _extract_float(pattern: str, text: str) -> float | None:
-    """Extract a float value from text via regex."""
-    import re
-    m = re.search(pattern, text)
-    if m:
-        return float(m.group(1).replace(",", ""))
-    return None
-
-
-def write_audit_result(
-    execution_id: str,
-    vendor_id: str,
-    invoice_num: str,
-    transaction_amount: float,
-    invoice_amount: float,
-    discrepancy_amount: float,
-    status: str,
-    agent_notes: str,
-    reviewed_by: str = "agent",
-) -> str:
-    """Write a single audit result row to BigQuery.
-
-    Args:
-        execution_id: Unique ID for this audit run.
-        vendor_id: The vendor's ID.
-        invoice_num: The invoice number.
-        transaction_amount: Amount from the transaction record.
-        invoice_amount: Amount from the invoice.
-        discrepancy_amount: The difference (transaction - invoice).
-        status: One of MATCHED, DISCREPANCY, UNMATCHED, ESCALATED.
-        agent_notes: Agent's explanation of the finding.
-        reviewed_by: Who reviewed this result.
-
-    Returns:
-        Confirmation message.
-    """
-    from datetime import datetime, UTC
-
-    row = {
-        "execution_id": execution_id,
-        "vendor_id": vendor_id,
-        "invoice_num": invoice_num,
-        "transaction_amount": transaction_amount,
-        "invoice_amount": invoice_amount,
-        "discrepancy_amount": discrepancy_amount,
-        "status": status,
-        "agent_notes": agent_notes,
-        "reviewed_by": reviewed_by,
-        "timestamp": datetime.now(UTC).isoformat(),
-    }
-
-    table_ref = f"{PROJECT_ID}.{DATASET}.audit_results"
-    errors = _client.insert_rows_json(table_ref, [row])
-
-    if errors:
-        return f"ERROR writing audit result: {errors}"
-    return f"✅ Audit result written for vendor {vendor_id} / {invoice_num} — status: {status}"
-
-
-# Export all tools as a list for the SDK
 AUDIT_TOOLS = [query_vendor_transactions, list_invoices_in_gcs, read_invoice_from_gcs, write_audit_result]
 ```
+
+> 📎 See the complete implementation with all four tools: [bigquery_tools.py](https://github.com/rominirani/financial-audit-agent-tutorial/blob/main/tools/bigquery_tools.py)
 
 These four functions give the agent typed, documented tools with clear input/output contracts. The `read_invoice_from_gcs` tool downloads the PDF, extracts text using PyPDF2, and parses structured fields (amounts, tax rates, currency) via regex. The agent never sees raw PDF bytes — it receives clean JSON.
 
@@ -961,75 +814,21 @@ Hooks are the SDK's mechanism for injecting cross-cutting concerns — logging, 
 ```python
 from google.antigravity.hooks import on_session_start, post_tool_call, on_session_end
 from google.antigravity import types
-import json
-import os
-from datetime import datetime, UTC
+from opentelemetry import trace
+# ... Cloud Logging and Cloud Trace setup (see full file for details) ...
 
-# --- Cloud Logging Integration ---
-try:
-    from google.cloud import logging as cloud_logging
-    _logging_client = cloud_logging.Client()
-    _logger = _logging_client.logger("financial-audit-agent")
-    CLOUD_LOGGING_ENABLED = True
-except ImportError:
-    CLOUD_LOGGING_ENABLED = False
-    print("⚠️  google-cloud-logging not installed. Using console-only logging.")
-
-# --- Cloud Trace Integration ---
-try:
-    from opentelemetry import trace
-    from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-    provider = TracerProvider()
-    processor = BatchSpanProcessor(CloudTraceSpanExporter())
-    provider.add_span_processor(processor)
-    trace.set_tracer_provider(provider)
-    _tracer = trace.get_tracer("financial-audit-agent")
-    CLOUD_TRACE_ENABLED = True
-except ImportError:
-    CLOUD_TRACE_ENABLED = False
-    _tracer = None
-    print("⚠️  opentelemetry/cloud-trace not installed. Using console-only tracing.")
-
-# Agent identity — set this to match your orchestrator config name
 AGENT_NAME = "audit-orchestrator"
-
-# Active session span (parent for all tool spans)
 _active_span = None
-# Tool call counter for ordering
 _tool_call_count = 0
-
-
-def _log(severity, message, **kwargs):
-    """Log to both console and Cloud Logging."""
-    log_entry = {
-        "timestamp": datetime.now(UTC).isoformat() + "Z",
-        "severity": severity,
-        "message": message,
-        **kwargs,
-    }
-    print(f"[AUDIT] {json.dumps(log_entry)}")
-
-    if CLOUD_LOGGING_ENABLED:
-        _logger.log_struct(log_entry, severity=severity)
 
 
 @on_session_start
 async def audit_session_start():
     global _active_span, _tool_call_count
     _tool_call_count = 0
-
-    print(f"\n{'='*60}")
-    print(f"🔍 FINANCIAL AUDIT SESSION STARTED — {datetime.now(UTC).isoformat()}Z")
-    print(f"{'='*60}\n")
-
     _log("INFO", "Audit session started", event="SESSION_START", agent=AGENT_NAME)
 
     if CLOUD_TRACE_ENABLED:
-        # Start the root session span. Tool spans will be explicitly
-        # parented under this span using set_span_in_context().
         _active_span = _tracer.start_span("financial-audit-session")
         _active_span.set_attribute("audit.type", "vendor-reconciliation")
         _active_span.set_attribute("agent.name", AGENT_NAME)
@@ -1037,58 +836,29 @@ async def audit_session_start():
 
 @post_tool_call
 async def audit_tool_invocation(data: types.ToolResult):
-    """Log every tool call for compliance and create a child trace span.
-
-    The @post_tool_call hook receives a types.ToolResult object after
-    each tool execution completes. We create a child span explicitly
-    parented under the session span so it appears nested in Cloud Trace.
-    """
+    """Create a child span explicitly parented under the session span."""
     global _tool_call_count
     _tool_call_count += 1
-
     tool_name = data.name if hasattr(data, 'name') else str(data)
 
     _log("INFO", f"Tool invoked: {tool_name}",
-         event="TOOL_INVOCATION",
-         agent=AGENT_NAME,
-         tool=tool_name,
-         tool_call_index=_tool_call_count)
+         event="TOOL_INVOCATION", agent=AGENT_NAME, tool=tool_name)
 
     if CLOUD_TRACE_ENABLED and _tracer and _active_span:
-        # Create a child span explicitly parented under the session span.
-        # set_span_in_context() tells the tracer to use _active_span as
-        # the parent, so the tool span appears nested in the trace view.
+        # Key: set_span_in_context() parents tool spans under session span
         parent_ctx = trace.set_span_in_context(_active_span)
-        tool_span = _tracer.start_span(
-            f"tool:{tool_name}",
-            context=parent_ctx,
-        )
+        tool_span = _tracer.start_span(f"tool:{tool_name}", context=parent_ctx)
         tool_span.set_attribute("tool.name", tool_name)
         tool_span.set_attribute("tool.call_index", _tool_call_count)
-        tool_span.set_attribute("agent.name", AGENT_NAME)
         tool_span.end()
 
 
-@on_session_end
-async def audit_session_end():
-    global _active_span
-    print(f"\n{'='*60}")
-    print(f"✅ FINANCIAL AUDIT SESSION COMPLETED — {datetime.now(UTC).isoformat()}Z")
-    print(f"{'='*60}\n")
-
-    _log("INFO", "Audit session completed",
-         event="SESSION_END",
-         agent=AGENT_NAME,
-         total_tool_calls=_tool_call_count)
-
-    if CLOUD_TRACE_ENABLED and _active_span:
-        _active_span.set_attribute("audit.total_tool_calls", _tool_call_count)
-        _active_span.end()
-        _active_span = None
-
+# @on_session_end closes the session span and logs total_tool_calls
 
 AUDIT_HOOKS = [audit_session_start, audit_tool_invocation, audit_session_end]
 ```
+
+> 📎 See the full implementation with Cloud Logging/Trace setup and graceful degradation: [observability.py](https://github.com/rominirani/financial-audit-agent-tutorial/blob/main/hooks/observability.py)
 
 **What each hook does:**
 - `@on_session_start` — Fires when the agent session begins. Creates a root Cloud Trace span and logs the start event to Cloud Logging.
@@ -1118,38 +888,23 @@ The key design decision is the **planted discrepancies** between these invoices 
 | 1022 (OfficeSupplies Co) | Clean match | $4,500 at 5% | $4,500 at 5% |
 
 ```python
-import os
 from reportlab.pdfgen import canvas
 
 def create_invoice(vendor_id, vendor_name, inv_num, amount, currency, tax_rate, output_dir):
-    """Generate a single invoice PDF with structured text fields.
-    
-    The text layout matches the regex patterns in read_invoice_from_gcs(),
-    so the agent can extract vendor_id, amounts, tax_rate, and currency.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    c = canvas.Canvas(os.path.join(output_dir, f"{inv_num}.pdf"))
-    c.drawString(100, 750, f"INVOICE: {inv_num}")
-    c.drawString(100, 730, f"Vendor: {vendor_name} (ID: {vendor_id})")
-    
-    base_amount = amount / (1 + tax_rate)
-    tax_amount = amount - base_amount
-    
-    c.drawString(100, 690, f"Base Amount: {base_amount:.2f} {currency}")
-    c.drawString(100, 670, f"Tax Rate: {tax_rate * 100}%")
-    c.drawString(100, 650, f"Tax Amount: {tax_amount:.2f} {currency}")
-    c.drawString(100, 610, f"TOTAL: {amount:.2f} {currency}")
-    c.save()
+    """Generate a single invoice PDF with structured text fields."""
+    ...
 
 # Normal — matches ERP exactly
 create_invoice('1022', 'OfficeSupplies Co', 'INV-1022-Q3-014', 4500.00, 'USD', 0.05, '../data/invoices')
 # Planted discrepancy 1: Tax calculation error (invoice shows 6.25% instead of 8.5%)
-create_invoice('8492', 'TechCorp', 'INV-8492-Q3-001', 138750.00, 'USD', 0.0625, '../data/invoices') 
+create_invoice('8492', 'TechCorp', 'INV-8492-Q3-001', 138750.00, 'USD', 0.0625, '../data/invoices')
 # Planted discrepancy 2: Currency mismatch (invoice in EUR, ERP in USD)
 create_invoice('3301', 'Global Services', 'INV-3301-Q3-099', 87500.00, 'EUR', 0.10, '../data/invoices')
 # Planted discrepancy 3: Duplicate (one PDF, two ERP records at different amounts)
 create_invoice('5567', 'Consulting Group', 'INV-5567-Q3-001', 23400.00, 'USD', 0.0, '../data/invoices')
 ```
+
+> 📎 See the full script: [generate_sample_invoices.py](https://github.com/rominirani/financial-audit-agent-tutorial/blob/main/scripts/generate_sample_invoices.py)
 
 To run this script and upload the generated PDFs to Cloud Storage, follow the instructions in **Step 4.3**.
 
@@ -1242,86 +997,34 @@ Each line is a JSON object with three fields: `input` (the prompt to send), `exp
 This script loads the dataset, sends each test case to the agent, and checks whether the expected keywords appear in the response. It reuses the same `Agent` API and orchestrator config from `main.py`:
 
 ```python
-"""Evaluation runner for the Financial Audit Agent.
-
-Usage:
-    python eval/run_eval.py --project-id=YOUR_PROJECT_ID
-"""
-import asyncio
-import argparse
-import json
-import os
-import sys
-
-# Add project root to path so we can import agents/ and tools/
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from google.antigravity import Agent
-from agents.orchestrator import get_orchestrator_config
-from policies.audit_policies import DEVELOPMENT_POLICIES
-from hooks.observability import AUDIT_HOOKS
-
-
 async def run_eval(eval_file: str, project_id: str):
     """Run each eval case and check agent output against expected keywords."""
-
-    # Load test cases
     with open(eval_file) as f:
         cases = [json.loads(line) for line in f if line.strip()]
 
-    print(f"📋 Loaded {len(cases)} eval cases from {eval_file}\n")
-
-    workspace_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-
-    # Build agent config (same as main.py, using dev policies)
     config = get_orchestrator_config(
-        policies=DEVELOPMENT_POLICIES,
-        workspace=workspace_dir,
-        project_id=project_id,
+        policies=DEVELOPMENT_POLICIES, workspace=workspace_dir, project_id=project_id,
     )
     config.hooks = AUDIT_HOOKS
 
     passed = 0
-    failed = 0
-
     async with Agent(config) as agent:
-        for i, case in enumerate(cases, 1):
-            print(f"--- Eval Case {i}/{len(cases)}: {case['input']} ---")
-
-            # Send the eval prompt to the agent
+        for case in cases:
             response = await agent.chat(case["input"])
             result = await response.text()
 
             # Check if ALL expected keywords appear in the response
             keywords = [kw.strip().lower() for kw in case["expected_outcome"].split(",")]
-            result_lower = result.lower()
-            missing = [kw for kw in keywords if kw not in result_lower]
+            missing = [kw for kw in keywords if kw not in result.lower()]
 
             if not missing:
-                print(f"✅ PASS\n")
+                print(f"✅ PASS")
                 passed += 1
             else:
                 print(f"❌ FAIL — missing keywords: {missing}")
-                print(f"   Response preview: {result[:300]}...\n")
-                failed += 1
-
-    # Summary
-    total = passed + failed
-    print(f"\n{'='*60}")
-    print(f"📊 EVAL RESULTS: {passed}/{total} passed, {failed}/{total} failed")
-    print(f"{'='*60}")
-    return failed == 0
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run agent evaluations")
-    parser.add_argument("--project-id", required=True, help="GCP project ID")
-    parser.add_argument("--dataset", default="eval/eval_dataset.jsonl", help="Path to eval dataset")
-    args = parser.parse_args()
-
-    success = asyncio.run(run_eval(args.dataset, args.project_id))
-    sys.exit(0 if success else 1)
 ```
+
+> 📎 See the full eval runner with CLI argument parsing: [run_eval.py](https://github.com/rominirani/financial-audit-agent-tutorial/blob/main/eval/run_eval.py)
 
 **5.8c: Run the Evaluations**
 
@@ -1662,13 +1365,8 @@ CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 300 server:app
 
 The server exposes two endpoints: `POST /audit` to run the reconciliation and `GET /health` for Cloud Run health checks. It reads `PROJECT_ID` from the environment variable (set during deployment):
 ```python
-import asyncio
-import json
-import os
-
 from flask import Flask, request, jsonify
 from google.antigravity import Agent
-
 from agents.orchestrator import get_orchestrator_config
 from policies.audit_policies import PRODUCTION_POLICIES
 from hooks.observability import AUDIT_HOOKS
@@ -1680,51 +1378,15 @@ def run_audit():
     data = request.get_json(silent=True) or {}
     quarter = data.get("quarter", "Q3")
     project_id = os.environ.get("PROJECT_ID")
-
-    if not project_id:
-        return jsonify({"error": "PROJECT_ID environment variable is not set"}), 500
-
     result = asyncio.run(_execute_audit(quarter, project_id))
     return jsonify(result)
 
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "healthy"}), 200
-
-async def _execute_audit(quarter: str, project_id: str) -> dict:
-    workspace_dir = os.path.abspath(os.path.dirname(__file__))
-    config = get_orchestrator_config(
-        policies=PRODUCTION_POLICIES,
-        workspace=workspace_dir,
-        project_id=project_id,
-        quarter=quarter,
-    )
-    config.hooks = AUDIT_HOOKS
-
-    async with Agent(config) as agent:
-        response = await agent.chat(
-            f"Execute the full {quarter} vendor invoice reconciliation now. "
-            f"Complete ALL steps: query transactions, list invoices, read EVERY invoice PDF, "
-            f"reconcile each transaction against its invoice, write audit results, "
-            f"and produce the final compliance report. Do not stop until the report is complete."
-        )
-        report = await response.text()
-        usage = agent.conversation.total_usage
-
-    return {
-        "quarter": quarter,
-        "report": report,
-        "token_usage": {
-            "prompt_tokens": usage.prompt_token_count,
-            "output_tokens": usage.candidates_token_count,
-            "total_tokens": usage.total_token_count,
-        },
-    }
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False)
 ```
+
+> 📎 See the full server with async agent execution: [server.py](https://github.com/rominirani/financial-audit-agent-tutorial/blob/main/server.py)
 
 **5.11c: Deploy to Cloud Run**
 ```bash
