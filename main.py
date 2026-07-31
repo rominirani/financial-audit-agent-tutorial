@@ -32,6 +32,7 @@ async def main():
         policies=policies,
         workspace=workspace_dir,
         project_id=args.project_id,
+        quarter=args.quarter,
     )
     config.hooks = AUDIT_HOOKS
 
@@ -41,12 +42,10 @@ async def main():
 
     async with Agent(config) as agent:
         response = await agent.chat(
-            f"Execute the Q3 vendor invoice reconciliation workflow. "
-            f"1. Use query_vendor_transactions('{args.quarter}') to fetch transactions from BigQuery. "
-            f"2. Use list_invoices_in_gcs() to find all invoice PDFs in GCS. "
-            f"3. Use read_invoice_from_gcs() to extract data from each PDF. "
-            f"4. Compare each transaction against the extracted invoice data. "
-            f"5. Write audit results and produce a summary compliance report."
+            f"Execute the full {args.quarter} vendor invoice reconciliation now. "
+            f"Complete ALL steps: query transactions, list invoices, read EVERY invoice PDF, "
+            f"reconcile each transaction against its invoice, write audit results, "
+            f"and produce the final compliance report. Do not stop until the report is complete."
         )
 
         # Print the agent's response
