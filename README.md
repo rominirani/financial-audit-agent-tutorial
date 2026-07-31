@@ -31,7 +31,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # 2. Configure your project
-#    Open tools/bigquery_tools.py and replace YOUR_PROJECT_ID with your GCP project ID
+#    Open tools/bigquery_tools.py and replace YOUR_PROJECT_ID with your GCP project ID.
+#    BUCKET_NAME is auto-derived as {PROJECT_ID}-audit-invoices — no extra config needed.
 export PROJECT_ID="your-gcp-project-id"
 gcloud config set project $PROJECT_ID
 
@@ -95,6 +96,13 @@ python main.py --mode=prod --quarter=Q3 --project-id=$PROJECT_ID
 Install optional dependencies for production observability:
 ```bash
 pip install google-cloud-logging opentelemetry-api opentelemetry-sdk opentelemetry-exporter-gcp-trace
+```
+
+## Evaluations
+
+Run the eval suite to verify the agent handles all test scenarios correctly:
+```bash
+python eval/run_eval.py --project-id=$PROJECT_ID
 ```
 
 ## Tutorial
