@@ -60,7 +60,7 @@ pip install google-cloud-logging opentelemetry-api opentelemetry-sdk opentelemet
 
 ## Tutorial
 
-For the complete step-by-step tutorial, see the [companion article](../tutorial_financial_audit_agent.md).
+For the complete step-by-step tutorial, see the companion article on building this system from scratch.
 
 ## License
 

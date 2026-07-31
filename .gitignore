@@ -15,7 +15,7 @@ venv/
 Thumbs.db
 
 # Generated
-financial-audit-agent/data/invoices/*.pdf
+data/invoices/*.pdf
 
 # IDE
 .idea/
