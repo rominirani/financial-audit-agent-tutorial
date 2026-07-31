@@ -35,10 +35,14 @@ pip install -r requirements.txt
 export PROJECT_ID="your-gcp-project-id"
 gcloud config set project $PROJECT_ID
 
-# 3. Generate sample invoice PDFs
+# 3. Enable required APIs
+gcloud services enable bigquery.googleapis.com storage.googleapis.com \
+  logging.googleapis.com cloudtrace.googleapis.com aiplatform.googleapis.com
+
+# 4. Generate sample invoice PDFs
 python scripts/generate_sample_invoices.py
 
-# 4. Create BigQuery dataset and tables
+# 5. Create BigQuery dataset and tables
 bq mk --dataset $PROJECT_ID:financial_audit
 
 bq mk --table $PROJECT_ID:financial_audit.vendor_transactions \
@@ -47,7 +51,7 @@ bq mk --table $PROJECT_ID:financial_audit.vendor_transactions \
 bq mk --table $PROJECT_ID:financial_audit.audit_results \
   execution_id:STRING,vendor_id:STRING,invoice_num:STRING,transaction_amount:FLOAT64,invoice_amount:FLOAT64,discrepancy_amount:FLOAT64,status:STRING,agent_notes:STRING,reviewed_by:STRING,timestamp:TIMESTAMP
 
-# 5. Populate sample transaction data
+# 6. Populate sample transaction data
 bq query --use_legacy_sql=false \
 'INSERT INTO `'$PROJECT_ID'.financial_audit.vendor_transactions`
 (vendor_id, vendor_name, invoice_num, amount, currency, tax_rate, status, quarter, transaction_date) VALUES
@@ -57,15 +61,28 @@ bq query --use_legacy_sql=false \
 ("5567", "Consulting Group Inc", "INV-5567-Q3-001", 23400.00, "USD", 0.0, "PENDING", "Q3", "2026-08-10"),
 ("5567", "Consulting Group Inc", "INV-5567-Q3-001", 24100.00, "USD", 0.0, "PENDING", "Q3", "2026-08-12")'
 
-# 6. Create GCS bucket and upload invoices
+# 7. Create GCS bucket and upload invoices
 gsutil mb -l us-central1 gs://$PROJECT_ID-audit-invoices
 gsutil -m cp data/invoices/*.pdf gs://$PROJECT_ID-audit-invoices/Q3/
 
-# 7. Run the audit
+# 8. Run the audit
 python main.py --mode=dev --quarter=Q3 --project-id=$PROJECT_ID
 ```
 
-## Policy Tiers
+## Running the Agent
+
+The agent supports three policy tiers. Try all three to see how the SDK's policy system controls agent behavior:
+
+```bash
+# Development — full permissions, good for debugging
+python main.py --mode=dev --quarter=Q3 --project-id=$PROJECT_ID
+
+# Staging — agent pauses and prompts for human approval before writes
+python main.py --mode=staging --quarter=Q3 --project-id=$PROJECT_ID
+
+# Production — deny-by-default, destructive commands silently blocked
+python main.py --mode=prod --quarter=Q3 --project-id=$PROJECT_ID
+```
 
 | Flag | Policies | Use Case |
 |:---|:---|:---|
@@ -82,7 +99,7 @@ pip install google-cloud-logging opentelemetry-api opentelemetry-sdk opentelemet
 
 ## Tutorial
 
-For the complete step-by-step tutorial, see the companion article on building this system from scratch.
+For the complete step-by-step tutorial explaining every design decision, see the companion article on building this system from scratch.
 
 ## License
 
