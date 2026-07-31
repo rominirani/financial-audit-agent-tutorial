@@ -37,14 +37,17 @@ def get_orchestrator_config(policies, workspace, project_id=None, quarter="Q3"):
         STEP 5: For each reconciled pair, call write_audit_result() to record the finding.
                 If any discrepancy exceeds $1,000, set status to ESCALATED.
 
-        STEP 6: Produce a FINAL COMPLIANCE REPORT summarizing:
+        STEP 6: Produce a FINAL COMPLIANCE REPORT directly in your response text.
+                Include ALL of the following in your response (not in a separate file):
                 - Total vendors audited
-                - Number of matches vs discrepancies
-                - Details of each discrepancy (vendor, amount difference, cause)
-                - Escalation recommendations
+                - For each vendor: status (MATCHED/DISCREPANCY/ESCALATED), amounts, and rationale
+                - Summary count of matches vs discrepancies
+                - Details of each discrepancy (vendor, amount difference, root cause)
+                - Escalation recommendations for discrepancies over $1,000
 
         CRITICAL RULES:
         - You MUST call read_invoice_from_gcs() for EVERY invoice — do not skip any
+        - Your final response MUST contain the full report text — do NOT just link to a file
         - Never modify the vendor_transactions table directly
         - Always escalate discrepancies over $1,000 — do not auto-approve
         - Log every decision with a clear rationale
