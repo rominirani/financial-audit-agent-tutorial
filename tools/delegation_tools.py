@@ -1,14 +1,19 @@
-"""Delegation tools for the Financial Audit Orchestrator.
+"""Delegation tools for the Financial Audit Agent Team.
 
-Instead of giving the orchestrator direct access to BigQuery/GCS tools,
-we wrap each subagent as a delegation tool. The orchestrator calls these
-functions, which internally spawn a specialist subagent with restricted
-tool access, run it, and return the result.
+These tools wrap subagent execution so the Orchestrator can delegate
+to specialist agents without having direct access to data tools.
 
-This enforces true separation of concerns:
-  - Data Researcher: read-only BigQuery + GCS listing
-  - Invoice Analyzer: read-only GCS PDF extraction
-  - Reconciler: write audit results to BigQuery
+Architecture:
+  Orchestrator (has ONLY these delegation tools)
+    ├── delegate_to_data_researcher()   → spawns read-only BigQuery/GCS agent
+    ├── delegate_to_invoice_analyzer()  → spawns read-only PDF extraction agent
+    └── delegate_to_reconciler()        → spawns write-enabled reconciliation agent
+
+The module accumulates FULL results from each delegation call so the
+Reconciler can access all prior data. However, it returns CONCISE summaries
+to the Orchestrator to keep its context window manageable — this prevents
+the "model produced invalid output" errors that occur when the context
+grows too large after multiple tool calls.
 """
 from google.antigravity import Agent
 
@@ -17,19 +22,35 @@ _project_id = None
 _workspace = None
 _reconciler_policies = None
 
+# Accumulated FULL results from prior delegation calls.
+# The reconciler reads these directly; the orchestrator only sees summaries.
+_research_results = None
+_invoice_results = []
+
 
 def configure(project_id: str, workspace: str, reconciler_policies: list):
     """Initialize delegation config. Called once from main.py before agent starts.
 
     Args:
-        project_id: GCP project ID for Vertex AI.
-        workspace: Absolute path to the project workspace.
-        reconciler_policies: Policy list for the reconciler (mode-dependent).
+        project_id: GCP project ID for Vertex AI routing.
+        workspace: Absolute path to the project workspace directory.
+        reconciler_policies: Mode-dependent policy list (dev/staging/prod).
     """
     global _project_id, _workspace, _reconciler_policies
+    global _research_results, _invoice_results
     _project_id = project_id
     _workspace = workspace
     _reconciler_policies = reconciler_policies
+    # Reset accumulated results for each new run
+    _research_results = None
+    _invoice_results = []
+
+
+def _truncate(text: str, max_chars: int = 500) -> str:
+    """Truncate text to keep orchestrator context manageable."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + f"\n... [truncated — full data ({len(text)} chars) saved for reconciler]"
 
 
 async def delegate_to_data_researcher(quarter: str = "Q3") -> str:
@@ -40,11 +61,12 @@ async def delegate_to_data_researcher(quarter: str = "Q3") -> str:
     It cannot write audit results or modify any data.
 
     Args:
-        quarter: The fiscal quarter to research (e.g. "Q3").
+        quarter: The fiscal quarter to query (e.g., "Q3").
 
     Returns:
-        JSON string with transaction records and invoice file listing.
+        Summary of transaction records and invoice file listings.
     """
+    global _research_results
     from agents.data_researcher import get_data_researcher_config
 
     config = get_data_researcher_config(
@@ -56,10 +78,13 @@ async def delegate_to_data_researcher(quarter: str = "Q3") -> str:
         response = await researcher.chat(
             f"Query all PENDING vendor transactions for quarter '{quarter}' "
             f"from BigQuery. Also list all invoice PDF files in the GCS bucket. "
-            f"Return the complete results as structured JSON with two sections: "
-            f"'transactions' and 'invoices'."
+            f"Return the complete results as structured JSON."
         )
-        return await response.text()
+        result = await response.text()
+        # Store full result for the reconciler
+        _research_results = result
+        # Return concise summary to the orchestrator
+        return _truncate(result)
 
 
 async def delegate_to_invoice_analyzer(invoice_path: str) -> str:
@@ -70,11 +95,10 @@ async def delegate_to_invoice_analyzer(invoice_path: str) -> str:
     It cannot query BigQuery or write any data.
 
     Args:
-        invoice_path: Path to the invoice in GCS (e.g. "Q3/INV-8492-Q3-001.pdf").
+        invoice_path: Path to the invoice PDF in GCS (e.g., "Q3/INV-8492-Q3-001.pdf").
 
     Returns:
-        JSON string with extracted invoice data (vendor_id, invoice_num,
-        base_amount, tax_rate, tax_amount, total_amount, currency).
+        Summary of extracted invoice fields.
     """
     from agents.invoice_analyzer import get_invoice_analyzer_config
 
@@ -90,24 +114,26 @@ async def delegate_to_invoice_analyzer(invoice_path: str) -> str:
             f"base_amount, tax_rate, tax_amount, total_amount, and currency. "
             f"Return the extracted data as a JSON object."
         )
-        return await response.text()
+        result = await response.text()
+        # Store full result for the reconciler
+        _invoice_results.append(result)
+        # Return concise summary to the orchestrator
+        return _truncate(result)
 
 
-async def delegate_to_reconciler(
-    transactions_json: str,
-    invoices_json: str,
-    execution_id: str = "AUDIT-Q3",
-) -> str:
+async def delegate_to_reconciler(execution_id: str = "AUDIT-Q3") -> str:
     """Delegate to the Reconciliation Engine subagent to compare transactions
     against invoices, classify findings, and write audit results to BigQuery.
+
+    The Reconciler automatically receives all transaction and invoice data
+    collected by prior delegation calls. You do NOT need to pass the data —
+    it is injected from the accumulated results.
 
     The Reconciler is the ONLY subagent with write access to BigQuery
     (subject to the current policy tier: dev/staging/prod).
 
     Args:
-        transactions_json: JSON string with transaction records from BigQuery.
-        invoices_json: JSON string with extracted invoice data from all PDFs.
-        execution_id: Unique ID for this audit run.
+        execution_id: Unique ID for this audit run (default: "AUDIT-Q3").
 
     Returns:
         Text report with reconciliation findings and write confirmations.
@@ -119,6 +145,9 @@ async def delegate_to_reconciler(
         workspace=_workspace,
         project_id=_project_id,
     )
+
+    # Build the combined data payload from accumulated FULL results
+    invoices_combined = "\n---\n".join(_invoice_results) if _invoice_results else "No invoices analyzed."
 
     async with Agent(config) as reconciler:
         response = await reconciler.chat(
@@ -132,8 +161,8 @@ async def delegate_to_reconciler(
             f"  - If discrepancy exceeds $1,000, set status to ESCALATED\n\n"
             f"For EACH reconciled pair, call write_audit_result() with "
             f"execution_id='{execution_id}'.\n\n"
-            f"TRANSACTIONS:\n{transactions_json}\n\n"
-            f"INVOICES:\n{invoices_json}\n\n"
+            f"TRANSACTIONS:\n{_research_results}\n\n"
+            f"INVOICES:\n{invoices_combined}\n\n"
             f"After writing all results, produce a summary of your findings."
         )
         return await response.text()
