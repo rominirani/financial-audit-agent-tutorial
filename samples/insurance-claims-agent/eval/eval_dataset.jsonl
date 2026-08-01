@@ -1,0 +1,4 @@
+{"input": "Process claim CLM-4821.", "expected_outcome": "exceeds, coverage, escalat", "expected_tools": ["delegate_to_claims_researcher", "delegate_to_document_analyzer", "delegate_to_adjudicator"]}
+{"input": "Process claim CLM-1133.", "expected_outcome": "approved, match", "expected_tools": ["delegate_to_claims_researcher", "delegate_to_document_analyzer", "delegate_to_adjudicator"]}
+{"input": "Process claim CLM-7744.", "expected_outcome": "date, mismatch, flag", "expected_tools": ["delegate_to_claims_researcher", "delegate_to_document_analyzer", "delegate_to_adjudicator"]}
+{"input": "Process claim CLM-9902.", "expected_outcome": "duplicate, flag", "expected_tools": ["delegate_to_claims_researcher", "delegate_to_document_analyzer", "delegate_to_adjudicator"]}

@@ -1,0 +1,1 @@
+{"input": "Start the HR onboarding process", "expected_tool_calls": ["delegate_to_hr_researcher", "delegate_to_document_verifier", "delegate_to_compliance_checker"]}

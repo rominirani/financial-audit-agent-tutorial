@@ -148,6 +148,17 @@ curl -X POST "$SERVICE_URL/audit" \
 
 For the complete step-by-step tutorial explaining every design decision, see the companion article on building this system from scratch.
 
+## Additional Sample Apps
+
+The `samples/` directory contains additional use cases that apply the same delegation architecture to different domains:
+
+| Sample | Description |
+|:---|:---|
+| [`insurance-claims-agent`](samples/insurance-claims-agent/) | Automated claims adjudication — researches pending claims, analyzes supporting documents, and writes approval/denial decisions |
+| [`hr-onboarding-agent`](samples/hr-onboarding-agent/) | Employee onboarding compliance — verifies new hire documents against department requirements and flags missing or expired paperwork |
+
+Each sample follows the same patterns as the Financial Audit Agent: orchestrator with delegation tools, specialist subagents with model tiering (`gemini-3.6-flash` / `gemini-3.5-flash-lite`), state accumulation with truncation, guardrails, and dev/staging/prod policy tiers. See the README in each sample directory for setup instructions.
+
 ## License
 
 Apache 2.0

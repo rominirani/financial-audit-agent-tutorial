@@ -1,0 +1,6 @@
+google-cloud-bigquery
+google-cloud-storage
+PyPDF2
+flask
+gunicorn
+# Assuming the hypothetical google.genai.ag2 package is installed separately or available in the environment
