@@ -23,13 +23,13 @@ data/invoices/*.pdf
 *.swp
 *.swo
 
-# Tutorial article (maintained separately)
+# Tutorial files (maintained separately, never pushed)
+*.html
+*.md.bak
 tutorial_financial_audit_agent.md
 tutorial_hr_onboarding_agent.md
 tutorial_insurance_claims_agent.md
-tutorial.html
 generate_html.py
-index.html
 convert.py
 validate_tutorial_code.py
 architecting_autonomous_enterprise_workflows.md
