@@ -42,7 +42,7 @@ def get_data_researcher_config(workspace, project_id=None):
         }
         """,
         tools=[query_vendor_transactions, list_invoices_in_gcs],
-        model="gemini-2.5-flash",
+        model="gemini-3.5-flash-lite",
         policies=[
             policy.deny_all(),
             policy.allow("query_vendor_transactions"),
@@ -51,5 +51,5 @@ def get_data_researcher_config(workspace, project_id=None):
         workspaces=[workspace],
         vertex=True if project_id else None,
         project=project_id,
-        location="us-central1" if project_id else None,
+        location="global" if project_id else None,
     )

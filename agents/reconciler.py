@@ -3,21 +3,37 @@
 This is the ONLY subagent with write access to BigQuery. It receives
 transaction and invoice data from the orchestrator, reconciles them,
 and writes results via write_audit_result(). Write access is governed
-by the current policy tier (dev/staging/prod).
+by a hardcoded status validation policy (defense in depth) PLUS any
+mode-dependent policies passed from the orchestrator tier.
 """
 from google.antigravity import LocalAgentConfig
+from google.antigravity.hooks import policy
 from tools.bigquery_tools import write_audit_result
+
+# Defense in depth: only allow writes with valid status values.
+# Even if the LLM hallucinates a status like "APPROVED" or "DELETE_ALL",
+# this policy rejects it because it's not in VALID_STATUSES.
+VALID_STATUSES = {"MATCHED", "DISCREPANCY", "ESCALATED", "UNMATCHED"}
+
+RECONCILER_WRITE_POLICY = policy.allow(
+    "write_audit_result",
+    when=lambda args: args.get("status", "") in VALID_STATUSES,
+    name="allow_valid_audit_writes",
+)
 
 
 def get_reconciler_config(policies, workspace, project_id=None):
     """Build the Reconciliation Engine subagent configuration.
 
     Args:
-        policies: Mode-dependent policy list (dev/staging/prod).
-                  Controls whether write_audit_result() requires approval.
+        policies: Mode-dependent policy list from the orchestrator tier.
         workspace: Absolute path to the project workspace.
         project_id: GCP project ID for Vertex AI.
     """
+    # Combine mode policies with the hardcoded write validation.
+    # The write validation is always active regardless of dev/staging/prod.
+    reconciler_policies = list(policies) + [RECONCILER_WRITE_POLICY]
+
     return LocalAgentConfig(
         system_instructions="""
         You are a Reconciliation Engine. You receive two datasets:
@@ -47,10 +63,11 @@ def get_reconciler_config(policies, workspace, project_id=None):
         After writing all results, produce a summary of your findings.
         """,
         tools=[write_audit_result],
-        model="gemini-2.5-flash",
-        policies=policies,
+        model="gemini-3.6-flash",
+        policies=reconciler_policies,
         workspaces=[workspace],
         vertex=True if project_id else None,
         project=project_id,
-        location="us-central1" if project_id else None,
+        location="global" if project_id else None,
     )
+

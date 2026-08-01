@@ -26,6 +26,7 @@ _reconciler_policies = None
 # The reconciler reads these directly; the orchestrator only sees summaries.
 _research_results = None
 _invoice_results = []
+_expected_invoice_paths = []  # Parsed from data researcher results
 
 
 def configure(project_id: str, workspace: str, reconciler_policies: list):
@@ -37,13 +38,14 @@ def configure(project_id: str, workspace: str, reconciler_policies: list):
         reconciler_policies: Mode-dependent policy list (dev/staging/prod).
     """
     global _project_id, _workspace, _reconciler_policies
-    global _research_results, _invoice_results
+    global _research_results, _invoice_results, _expected_invoice_paths
     _project_id = project_id
     _workspace = workspace
     _reconciler_policies = reconciler_policies
     # Reset accumulated results for each new run
     _research_results = None
     _invoice_results = []
+    _expected_invoice_paths = []
 
 
 def _truncate(text: str, max_chars: int = 500) -> str:
@@ -83,8 +85,19 @@ async def delegate_to_data_researcher(quarter: str = "Q3") -> str:
         result = await response.text()
         # Store full result for the reconciler
         _research_results = result
-        # Return concise summary to the orchestrator
-        return _truncate(result)
+        # Extract invoice paths from the result for the guardrail
+        import re
+        _expected_invoice_paths.clear()
+        for match in re.findall(r'(Q\d+/INV-[\w-]+\.pdf)', result):
+            if match not in _expected_invoice_paths:
+                _expected_invoice_paths.append(match)
+        # Return concise summary so orchestrator knows what was found
+        invoice_list = ', '.join(_expected_invoice_paths) if _expected_invoice_paths else 'none found'
+        return (
+            f"✅ Data Researcher complete. Found {len(_expected_invoice_paths)} invoices "
+            f"to analyze: [{invoice_list}]. "
+            f"You MUST call delegate_to_invoice_analyzer() for each one before reconciling."
+        )
 
 
 async def delegate_to_invoice_analyzer(invoice_path: str) -> str:
@@ -117,8 +130,8 @@ async def delegate_to_invoice_analyzer(invoice_path: str) -> str:
         result = await response.text()
         # Store full result for the reconciler
         _invoice_results.append(result)
-        # Return concise summary to the orchestrator
-        return _truncate(result)
+        # Return concise summary with path echo so orchestrator tracks progress
+        return f"✅ Invoice '{invoice_path}' analyzed ({len(_invoice_results)} total so far). {_truncate(result)}"
 
 
 async def delegate_to_reconciler(execution_id: str = "AUDIT-Q3") -> str:
@@ -138,6 +151,19 @@ async def delegate_to_reconciler(execution_id: str = "AUDIT-Q3") -> str:
     Returns:
         Text report with reconciliation findings and write confirmations.
     """
+    # GUARDRAIL: Refuse to reconcile if not all invoices have been analyzed
+    if _expected_invoice_paths:
+        analyzed_count = len(_invoice_results)
+        expected_count = len(_expected_invoice_paths)
+        if analyzed_count < expected_count:
+            return (
+                f"❌ BLOCKED: Only {analyzed_count} of {expected_count} invoices have been "
+                f"analyzed. You must call delegate_to_invoice_analyzer() for ALL invoices "
+                f"before reconciling. Missing invoices: analyze the remaining "
+                f"{expected_count - analyzed_count} invoice(s) first, then call "
+                f"delegate_to_reconciler() again."
+            )
+
     from agents.reconciler import get_reconciler_config
 
     config = get_reconciler_config(

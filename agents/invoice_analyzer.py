@@ -35,7 +35,7 @@ def get_invoice_analyzer_config(workspace, project_id=None):
         If any field cannot be extracted, set it to null and note the issue.
         """,
         tools=[read_invoice_from_gcs],
-        model="gemini-2.5-flash",
+        model="gemini-3.5-flash-lite",
         policies=[
             policy.deny_all(),
             policy.allow("read_invoice_from_gcs"),
@@ -43,5 +43,5 @@ def get_invoice_analyzer_config(workspace, project_id=None):
         workspaces=[workspace],
         vertex=True if project_id else None,
         project=project_id,
-        location="us-central1" if project_id else None,
+        location="global" if project_id else None,
     )
