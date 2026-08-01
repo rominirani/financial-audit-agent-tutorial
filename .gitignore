@@ -35,5 +35,5 @@ validate_tutorial_code.py
 architecting_autonomous_enterprise_workflows.md
 
 # Old standalone agent directories (replaced by samples/)
-hr-onboarding-agent/
-insurance-claims-agent/
+/hr-onboarding-agent/
+/insurance-claims-agent/
