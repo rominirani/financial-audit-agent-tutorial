@@ -1,4 +1,4 @@
-{"input": "Reconcile vendor 8492 for Q3.", "expected_outcome": "discrepancy, tax, escalat", "expected_tools": ["query_vendor_transactions", "list_invoices_in_gcs", "read_invoice_from_gcs"]}
-{"input": "Reconcile vendor 1022 for Q3.", "expected_outcome": "match", "expected_tools": ["query_vendor_transactions", "list_invoices_in_gcs", "read_invoice_from_gcs"]}
-{"input": "Reconcile vendor 3301 for Q3.", "expected_outcome": "currency, mismatch", "expected_tools": ["query_vendor_transactions", "list_invoices_in_gcs", "read_invoice_from_gcs"]}
-{"input": "Reconcile vendor 5567 for Q3.", "expected_outcome": "5567, discrepancy", "expected_tools": ["query_vendor_transactions", "list_invoices_in_gcs", "read_invoice_from_gcs"]}
+{"input": "Reconcile vendor 8492 for Q3.", "expected_outcome": "discrepancy, tax, escalat", "expected_tools": ["delegate_to_data_researcher", "delegate_to_invoice_analyzer", "delegate_to_reconciler"]}
+{"input": "Reconcile vendor 1022 for Q3.", "expected_outcome": "match", "expected_tools": ["delegate_to_data_researcher", "delegate_to_invoice_analyzer", "delegate_to_reconciler"]}
+{"input": "Reconcile vendor 3301 for Q3.", "expected_outcome": "currency, mismatch", "expected_tools": ["delegate_to_data_researcher", "delegate_to_invoice_analyzer", "delegate_to_reconciler"]}
+{"input": "Reconcile vendor 5567 for Q3.", "expected_outcome": "5567, discrepancy", "expected_tools": ["delegate_to_data_researcher", "delegate_to_invoice_analyzer", "delegate_to_reconciler"]}

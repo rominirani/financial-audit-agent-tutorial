@@ -20,6 +20,7 @@ from google.antigravity import Agent
 from agents.orchestrator import get_orchestrator_config
 from policies.audit_policies import DEVELOPMENT_POLICIES
 from hooks.observability import AUDIT_HOOKS
+import tools.delegation_tools as delegation_tools
 
 
 async def run_eval(eval_file: str, project_id: str):
@@ -32,6 +33,14 @@ async def run_eval(eval_file: str, project_id: str):
     print(f"📋 Loaded {len(cases)} eval cases from {eval_file}\n")
 
     workspace_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+
+    # Configure delegation tools — subagents need project_id and workspace
+    # to create their own Vertex AI connections.
+    delegation_tools.configure(
+        project_id=project_id,
+        workspace=workspace_dir,
+        reconciler_policies=DEVELOPMENT_POLICIES,
+    )
 
     # Build agent config (same as main.py, using dev policies)
     config = get_orchestrator_config(
